@@ -1,0 +1,175 @@
+"Para la creación de store procedure en la base de datos"
+
+#create_client
+CREATE DEFINER=`root`@`%` PROCEDURE `create_client`(
+    IN `client_name` VARCHAR(50),
+    IN `client_phone` VARCHAR(20),
+    OUT out_client_id INT,
+    OUT out_client_name VARCHAR(255),
+    OUT client_out_phone VARCHAR(255)
+)
+BEGIN
+    INSERT INTO clients (name, phone) VALUES (client_name, client_phone);
+END
+
+
+#get_products
+CREATE DEFINER=`root`@`%` PROCEDURE `get_products`()
+BEGIN
+    SELECT * FROM Product;
+END
+
+
+
+#get_product_by_id
+CREATE DEFINER=`root`@`%` PROCEDURE `get_product_by_id`(
+    IN `product_id` INT
+)
+BEGIN
+    SELECT id, description, cost FROM products WHERE id = product_id;
+END
+
+
+
+#get_clients
+CREATE DEFINER=`root`@`%` PROCEDURE `get_clients`()
+BEGIN
+    SELECT * FROM Client;
+END
+
+
+
+#get_client_by_id
+CREATE DEFINER=`root`@`%` PROCEDURE `get_client_by_id`(
+    IN `client_id` INT
+)
+BEGIN
+    SELECT id, name, phone FROM clients WHERE id = client_id;
+END
+
+
+
+#create_sale
+CREATE DEFINER=`root`@`%` PROCEDURE create_sale(
+    IN input_data JSON,
+    OUT result VARCHAR(255)
+)
+BEGIN
+    DECLARE i INT DEFAULT 0;
+    DECLARE num_items INT;
+    DECLARE productExists INT;
+    DECLARE currentId INT;
+    DECLARE clientId INT;
+    DECLARE last_sale_id INT;
+    DECLARE totalSale INT DEFAULT 0;
+
+
+    SET num_items = JSON_LENGTH(input_data, '$.saleDetailsDTO');
+    SET clientId = JSON_EXTRACT(input_data,'$.idClient');
+
+    WHILE i < num_items DO
+
+        SET @productId = CONCAT('$.saleDetailsDTO[', i, '].idProduct');
+        SET @currentId = JSON_EXTRACT(input_data,@productId);
+
+        SELECT COUNT(*)
+        INTO productExists
+        FROM Product
+        WHERE id = @currentId;
+
+        IF productExists = 0 THEN
+            SET @message_text = '';
+            SET @message_text = CONCAT('Product with id ', @currentId, ' does not exist');
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = @message_text;
+        END IF;
+        SET i = i + 1;
+    END WHILE;
+
+    INSERT INTO Sale(idClient)
+    VALUES (clientId);
+
+    SET last_sale_id = LAST_INSERT_ID();
+    SET i = 0;
+
+    WHILE i < num_items DO
+        SET @productId = CONCAT('$.saleDetailsDTO[', i, '].idProduct');
+        SET @currentId = JSON_EXTRACT(input_data,@productId);
+
+        SET @quantity = CONCAT('$.saleDetailsDTO[', i, '].quantity');
+        SET @quantityPath = JSON_EXTRACT(input_data,@quantity);
+
+        SET @productCost = 0;
+        SELECT
+        cost INTO @productCost
+        FROM Product
+        WHERE id = @currentId;
+
+        SET @subtotal = @productCost * @quantityPath;
+        SET totalSale = totalSale + @subtotal;
+
+        INSERT INTO SaleDetail(idSale,idProduct,quantity,subtotal) VALUES (last_sale_id,@currentId,@quantityPath,@subtotal);
+        SET i = i + 1;
+    END WHILE;
+
+    UPDATE Sale SET total = totalSale WHERE id = last_sale_id;
+
+    SET result = 'processed';
+    COMMIT;
+END
+
+#create_sale
+//otra versión para pruebar
+CREATE DEFINER=`root`@`%` PROCEDURE `create_sale`(
+    IN `sale_client_id` INT,
+    IN `sale_details` JSON
+)
+BEGIN
+    DECLARE sale_id INT;
+    INSERT INTO sales (client_id) VALUES (sale_client_id);
+    SET sale_id = LAST_INSERT_ID();
+    INSERT INTO sale_details (sale_id, product_id, quantity, unit_price)
+    SELECT sale_id, d.product_id, d.quantity, p.cost FROM JSON_TABLE(sale_details, '$[*]' COLUMNS (product_id INT PATH '$.idProduct', quantity INT PATH '$.quantity')) d
+                                                              JOIN products p ON d.product_id = p.id;
+END
+
+#create_product
+CREATE DEFINER=`root`@`%` PROCEDURE `create_product`(
+    IN `product_description` VARCHAR(100),
+    IN `product_cost` DOUBLE
+    OUT out_product_id INT,
+    OUT out_product_description VARCHAR(255),
+    OUT out_product_cost DOUBLE(19,2)
+)
+BEGIN
+    INSERT INTO Product (description,cost)
+    VALUES(product_description,product_cost);
+
+    SET out_id = LAST_INSERT_ID();
+    SET out_description = product_description;
+    SET out_cost = product_cost;
+
+    COMMIT;
+END
+
+
+
+#get_sales
+CREATE DEFINER=`root`@`%` PROCEDURE `get_sales`()
+BEGIN
+    SELECT
+        s.id AS sale_id,
+        c.id AS client_id,
+        c.name AS client_name,
+        c.phone AS client_phone,
+        sd.product_id,
+        p.description AS product_description,
+        sd.quantity,
+        sd.unit_price,
+        (sd.quantity * sd.unit_price) AS total_price
+    FROM sales s
+             JOIN clients c ON s.client_id = c.id
+             JOIN sale_details sd ON s.id = sd.sale_id
+             JOIN products p ON sd.product_id = p.id;
+END
+

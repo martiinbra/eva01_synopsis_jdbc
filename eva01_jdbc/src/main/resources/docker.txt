@@ -1,0 +1,35 @@
+docker exec -it jdbcEjemplo mysql -u root -p
+CREATE DATABASE jdbcEjemplo;
+USE jdbcEjemplo;
+CREATE TABLE Client (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  name varchar(255) NOT NULL,
+  phone varchar(255) NOT NULL,
+  PRIMARY KEY (id)
+);
+
+CREATE TABLE Sale (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  idClient int(11) NOT NULL,
+  total decimal(19,2) NOT NULL,
+  PRIMARY KEY (id),
+  FOREIGN KEY (idClient) REFERENCES Client(id)
+);
+
+CREATE TABLE SaleDetail (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  idSale int(11) NOT NULL,
+  idProduct int(11) NOT NULL,
+  quantity int(11) NOT NULL,
+  subtotal decimal(19,2) NOT NULL,
+  PRIMARY KEY (id),
+  FOREIGN KEY (idSale) REFERENCES Sale(id),
+  FOREIGN KEY (idProduct) REFERENCES Product(id)
+);
+
+CREATE TABLE Product (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  description varchar(255) NOT NULL,
+  cost decimal(19,2) NOT NULL,
+  PRIMARY KEY (id)
+);
